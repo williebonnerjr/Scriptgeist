@@ -1,61 +1,118 @@
-function Watch-ProcessAnomalies {
+# ============================
+# Scriptgeist.psm1 - Core Loader and Launcher
+# ============================
+
+# Prevent duplication when reloading
+Remove-Item function:Show-GeistNotification -ErrorAction SilentlyContinue
+
+# ============================
+# Utility: Cross-Platform Notification
+# ============================
+function Show-GeistNotification {
     [CmdletBinding()]
     param (
-        [int]$IntervalSeconds = 15,
-        [int]$CpuThreshold = 50,
-        [int]$SummaryIntervalMinutes = 15
+        [Parameter(Mandatory)][string]$Title,
+        [Parameter(Mandatory)][string]$Message
     )
 
-    Write-Host "[*] Monitoring process activity (daemon mode)..." -ForegroundColor Cyan
-    Write-GeistLog -Message "Started Watch-ProcessAnomalies daemon"
-    $global:Scriptgeist_Running = $true
-
-    $nextSummaryTime = (Get-Date).AddMinutes($SummaryIntervalMinutes)
-    $summaryLog = @()
-
-    while ($global:Scriptgeist_Running) {
+    if ($IsWindows) {
         try {
-            $baseline = Get-Process | Select-Object Name, Id, CPU
-            Start-Sleep -Seconds $IntervalSeconds
-            $current = Get-Process | Select-Object Name, Id, CPU
-
-            $delta = Compare-Object $baseline $current -Property Name, Id, CPU -PassThru |
-                Where-Object { $_.SideIndicator -eq '=>' -and $_.CPU -gt $CpuThreshold }
-
-            if ($delta) {
-                $timestamp = Get-Date -Format "HH:mm:ss"
-                $msg = "[$timestamp] Anomaly: $($delta.Count) suspicious processes"
-                Write-GeistLog -Message $msg -Type "Alert"
-                $summaryLog += $msg
-            } else {
-                Write-GeistLog -Message "No anomalies this cycle"
-            }
-
-            # Show summary every X minutes
-            if ((Get-Date) -ge $nextSummaryTime) {
-                if ($summaryLog.Count -gt 0) {
-                    Write-Host "`n🕒 Summary Report for the last $SummaryIntervalMinutes minute(s):" -ForegroundColor Cyan
-                    foreach ($line in $summaryLog) {
-                        Write-Host "• $line" -ForegroundColor Yellow
-                    }
-
-                    # Toast Notification
-                    $notifMsg = "$($summaryLog.Count) anomaly event(s) in the last $SummaryIntervalMinutes minutes."
-                    Show-GeistNotification -Title "Scriptgeist Alert" -Message $notifMsg
-                } else {
-                    Write-Host "`n🕒 No anomalies to report in the last $SummaryIntervalMinutes minute(s)." -ForegroundColor Green
-                }
-
-                # Reset summary state
-                $summaryLog = @()
-                $nextSummaryTime = (Get-Date).AddMinutes($SummaryIntervalMinutes)
-            }
-
+            Import-Module BurntToast -ErrorAction Stop
+            New-BurntToastNotification -Text $Title, $Message
         } catch {
-            Write-GeistLog -Message "Error in monitoring loop: $_" -Type "Error"
+            Write-Warning "Toast notification failed: $_"
+            Write-Host "$Title`n$Message" -ForegroundColor Yellow
+        }
+    } elseif ($IsLinux -or $IsMacOS) {
+        if (Get-Command notify-send -ErrorAction SilentlyContinue) {
+            Start-Process "notify-send" -ArgumentList @("$Title", "$Message")
+        } elseif ($IsMacOS) {
+            $osaScript = "display notification `"$Message`" with title `"$Title`""
+            osascript -e $osaScript
+        } else {
+            Write-Host "$Title`n$Message" -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "$Title`n$Message" -ForegroundColor Yellow
+    }
+}
+
+# ============================
+# Internal: Import all Scriptgeist Modules
+# ============================
+function Import-ScriptgeistModules {
+    [CmdletBinding()]
+    param ()
+
+    $moduleRoot = $PSScriptRoot
+    $modulePaths = Get-ChildItem -Path "$moduleRoot\Modules" -Recurse -Filter *.ps1 -ErrorAction SilentlyContinue
+
+    foreach ($script in $modulePaths) {
+        try {
+            . $script.FullName
+            Write-Verbose "Loaded module: $($script.FullName)"
+        } catch {
+            Write-Warning "Failed to import: $($script.FullName) - $_"
         }
     }
+}
 
-    Write-Host "[x] Watch-ProcessAnomalies daemon stopped." -ForegroundColor Yellow
-    Write-GeistLog -Message "Stopped Watch-ProcessAnomalies daemon"
+# Load modules immediately
+Import-ScriptgeistModules
+
+# ============================
+# Public Entry: Start-Scriptgeist
+# ============================
+function Start-Scriptgeist {
+    [CmdletBinding()]
+    param (
+        [switch]$VerboseMode
+    )
+
+    Write-Host "`n🧠 Starting Scriptgeist Sentinel Mode..." -ForegroundColor Cyan
+    Write-Host "----------------------------------------"
+
+    if ($VerboseMode) { $VerbosePreference = "Continue" }
+
+    # Set up logging
+    $logPath = Join-Path -Path $PSScriptRoot -ChildPath "Logs"
+    if (-not (Test-Path $logPath)) {
+        New-Item -Path $logPath -ItemType Directory -Force | Out-Null
+    }
+
+    $startTime = Get-Date
+    Write-Host "🔄 Boot Time : $startTime"
+    Write-Host "🖥️  Platform  : $([System.Runtime.InteropServices.RuntimeInformation]::OSDescription)"
+    Write-Host "💡 Edition   : $($PSVersionTable.PSEdition) $($PSVersionTable.PSVersion)"
+    Write-Host "📂 Logs Path : $logPath"
+
+    try {
+        Write-Host "`n🛰️  Initializing Watchers..."
+
+        if (Get-Command -Name Watch-ProcessAnomalies -ErrorAction SilentlyContinue) {
+            Watch-ProcessAnomalies
+        } else {
+            Write-Warning "Watch-ProcessAnomalies is not available yet."
+        }
+
+        if (Get-Command -Name Watch-NetworkAnomalies -ErrorAction SilentlyContinue) {
+            Watch-NetworkAnomalies
+        } else {
+            Write-Warning "Watch-NetworkAnomalies is not available yet."
+        }
+
+        if (Get-Command -Name Watch-GuestSessions -ErrorAction SilentlyContinue) {
+            Watch-GuestSessions
+        } else {
+            Write-Warning "Watch-GuestSessions is not available yet."
+        }
+
+        # Future modules
+        # Watch-LogTampering
+        # Watch-SystemIntegrity
+
+        Write-Host "`n✅ Scriptgeist is running." -ForegroundColor Green
+    } catch {
+        Write-Error "❌ Critical failure on start: $_"
+    }
 }
