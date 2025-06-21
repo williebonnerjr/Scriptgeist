@@ -1,8 +1,18 @@
 # .gitattributes for cross-platform consistency
 
+# Normalize all text files to LF endings in the repository
 * text=auto eol=lf
+
+# Explicit PowerShell files
 *.ps1 text eol=lf
 *.psm1 text eol=lf
 *.psd1 text eol=lf
+
+# Documentation
 *.md   text eol=lf
 *.txt  text eol=lf
+
+# JSON and config files
+*.json text eol=lf
+*.yaml text eol=lf
+*.yml  text eol=lf
