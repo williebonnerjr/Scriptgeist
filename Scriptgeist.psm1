@@ -101,10 +101,23 @@ function Start-Scriptgeist {
             Write-Warning "Watch-NetworkAnomalies is not available yet."
         }
 
-        # Future modules
-        # Watch-LogTampering
-        # Watch-GuestSessions
-        # Watch-SystemIntegrity
+        if (Get-Command -Name Watch-LogTampering -ErrorAction SilentlyContinue) {
+            Watch-LogTampering
+        } else {
+            Write-Warning "Watch-LogTampering is not available yet."
+        }
+
+        if (Get-Command -Name Watch-GuestSessions -ErrorAction SilentlyContinue) {
+            Watch-GuestSessions
+        } else {
+            Write-Warning "Watch-GuestSessions is not available yet."
+        }
+
+        if (Get-Command -Name Watch-SystemIntegrity -ErrorAction SilentlyContinue) {
+            Watch-SystemIntegrity
+        } else {
+            Write-Warning "Watch-SystemIntegrity is not available yet."
+        }
 
         Write-Host "`n✅ Scriptgeist is running." -ForegroundColor Green
     } catch {
