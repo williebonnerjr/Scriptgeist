@@ -11,6 +11,7 @@ $IsUnix = $IsLinux -or $IsMacOS
 
 # Load module map
 $modules = @(
+    @{ Name = "Run All Modules"; Path = "ALL" },
     @{ Name = "Watch-CredentialArtifacts"; Path = "$ModulePath\Watch\Watch-CredentialArtifacts.ps1" },
     @{ Name = "Watch-GuestSessions"; Path = "$ModulePath\Watch\Watch-GuestSessions.ps1" },
     @{ Name = "Watch-SystemIntegrity"; Path = "$ModulePath\Watch\Watch-SystemIntegrity.ps1" },
@@ -51,9 +52,15 @@ if ($IsWin) {
         $selected = $listBox.SelectedItem
         if ($selected) {
             $mod = $modules | Where-Object { $_.Name -eq $selected }
-            if (Test-Path $mod.Path) {
+
+            if ($mod.Path -eq "ALL") {
+                # Launch Scriptgeist.ps1 with -Run All in new window
+                Start-Process "powershell" "-NoExit -ExecutionPolicy Bypass -File `"$PSScriptRoot\Scriptgeist.ps1`" -Run All"
+            }
+            elseif (Test-Path $mod.Path) {
                 Start-Process "powershell" "-NoExit -ExecutionPolicy Bypass -File `"$($mod.Path)`""
-            } else {
+            }
+            else {
                 [System.Windows.Forms.MessageBox]::Show("Module not found: $($mod.Path)")
             }
         }
@@ -73,19 +80,20 @@ elseif ($IsUnix) {
     if ($selection -match '^\d+$') {
         $index = [int]$selection - 1
         if ($index -ge 0 -and $index -lt $modules.Count) {
-            $modPath = $modules[$index].Path
-            if (Test-Path $modPath) {
-                . $modPath
-                Watch-CredentialArtifacts -OutputPrompt
+            $mod = $modules[$index]
+            if ($mod.Path -eq "ALL") {
+                & "$PSScriptRoot/Scriptgeist.ps1" -Run All
+            } elseif (Test-Path $mod.Path) {
+                . $mod.Path
+                & ($mod.Name) -OutputPrompt
             } else {
-                Write-Warning "Module not found: $modPath"
+                Write-Warning "Module not found: $($mod.Path)"
             }
         }
     } else {
         Write-Warning "Invalid selection."
     }
 }
-
 else {
     Write-Warning "Unsupported operating system for GUI."
 }

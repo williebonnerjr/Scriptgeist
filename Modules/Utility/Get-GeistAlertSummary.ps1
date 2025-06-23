@@ -4,11 +4,14 @@ function Get-GeistAlertSummary {
         [int]$MinutesBack = 15
     )
 
-    # Resolve log file path
-    $logFile = $PSScriptRoot -replace '\\Modules(\\.*)?$', '\Logs\Scriptgeist.log'
+    Write-Host "[*] Generating alert summary for the past $MinutesBack minute(s)..." -ForegroundColor Cyan
 
-    if (-not (Test-Path $logFile)) {
-        Write-Warning "No log file found at $logFile"
+    # Resolve log file path
+    $logFile = Join-Path -Path $PSScriptRoot -ChildPath "..\Logs\Scriptgeist.log"
+    $logFile = (Resolve-Path -Path $logFile -ErrorAction SilentlyContinue)?.Path
+
+    if (-not $logFile -or -not (Test-Path $logFile)) {
+        Write-Warning "⚠ No log file found at expected path: $logFile"
         return
     }
 
@@ -17,7 +20,7 @@ function Get-GeistAlertSummary {
     $alertEntries = @()
 
     try {
-        Get-Content $logFile -Encoding UTF8 | ForEach-Object {
+        Get-Content -Path $logFile -Encoding UTF8 -ErrorAction Stop | ForEach-Object {
             if ($_ -match $regex) {
                 $timestamp = [datetime]$Matches['Timestamp']
                 if ($timestamp -ge $cutoff) {
@@ -29,14 +32,17 @@ function Get-GeistAlertSummary {
             }
         }
     } catch {
-        Write-Warning "Failed to read log file: $_"
+        Write-GeistLog -Message "Error parsing alerts in Get-GeistAlertSummary: $_" -Type Warning
+        Write-Warning "❌ Failed to read log file: $_"
         return
     }
 
     if ($alertEntries.Count -eq 0) {
         Write-Host "✅ No alerts found in the last $MinutesBack minutes." -ForegroundColor Green
+        Write-GeistLog -Message "No alerts found in last $MinutesBack minutes (summary)"
     } else {
-        Write-Host "`n📊 Anomalies detected in the last $MinutesBack minutes:" -ForegroundColor Cyan
+        Write-Host "`n📊 Alerts from the last $MinutesBack minutes:" -ForegroundColor Cyan
         $alertEntries | Sort-Object Timestamp | Format-Table -AutoSize
+        Write-GeistLog -Message "Returned $($alertEntries.Count) alert(s) in summary window ($MinutesBack min)"
     }
 }

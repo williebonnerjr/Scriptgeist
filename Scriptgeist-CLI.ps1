@@ -10,11 +10,12 @@ function Show-Help {
     Write-Host "Usage:"
     Write-Host "  Scriptgeist-CLI.ps1 -List"
     Write-Host "  Scriptgeist-CLI.ps1 -Module <ModuleName> [-ModuleArgs '<args>']"
+    Write-Host "  Scriptgeist-CLI.ps1 -Module All [-ModuleArgs '<args>']"
     Write-Host "  Scriptgeist-CLI.ps1 -Help"
     Write-Host "`nExamples:"
     Write-Host "  ./Scriptgeist-CLI.ps1 -Module Watch-LogTampering"
     Write-Host "  ./Scriptgeist-CLI.ps1 -Module Watch-SystemLogs -ModuleArgs '-AttentionOnly','-OutputPrompt'"
-    Write-Host "  ./Scriptgeist-CLI.ps1 -Module Watch-CredentialArtifacts -ModuleArgs '-OutputPrompt'"
+    Write-Host "  ./Scriptgeist-CLI.ps1 -Module All -ModuleArgs '-AttentionOnly'"
     exit
 }
 
@@ -48,6 +49,29 @@ if ($List) {
     $modules | Sort-Object Group, Name | ForEach-Object {
         Write-Host "- [$($_.Group)] $($_.Name)"
     }
+    exit
+}
+
+# Run all modules in background jobs
+if ($Module -ieq "All") {
+    Write-Host "`n[*] Executing all Scriptgeist modules..." -ForegroundColor Cyan
+
+    foreach ($mod in $modules) {
+        $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+        $logPath = Join-Path $logRoot "CLI-$($mod.Name)-$timestamp.log"
+
+        Write-Host "[+] Launching: $($mod.Name)" -ForegroundColor Yellow
+        try {
+            Start-Job -ScriptBlock {
+                param($path, $modArgs, $log)
+                & powershell -NoProfile -ExecutionPolicy Bypass -File $path @modArgs *>> $log
+            } -ArgumentList $mod.Path, $ModuleArgs, $logPath
+        } catch {
+            Write-Warning "Failed to start job for $($mod.Name): $_"
+        }
+    }
+
+    Write-Host "`n[✓] All modules launched in background jobs. Logs will be stored in 'Logs\' folder." -ForegroundColor Green
     exit
 }
 

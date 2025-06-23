@@ -1,12 +1,14 @@
 function Watch-CredentialArtifacts {
-    [CmdletBinding()]
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
     param (
         [switch]$AttentionOnly,
-        [switch]$OutputPrompt
+        [switch]$OutputPrompt,
+        [ValidateSet('Passive', 'Interactive', 'Remedial')]
+        [string]$Category = 'Passive'
     )
 
     Write-Host "[*] Scanning for credential artifacts..." -ForegroundColor Cyan
-    Write-GeistLog -Message "Started Watch-CredentialArtifacts"
+    Write-GeistLog -Message "Started Watch-CredentialArtifacts [$Category]"
 
     $alerts = @()
 
@@ -30,20 +32,20 @@ function Watch-CredentialArtifacts {
             "$env:APPDATA\Mozilla\Firefox\Profiles"
         )
     } elseif ($IsLinux -or $IsMacOS) {
-        $userHome = [System.Environment]::GetEnvironmentVariable("HOME")
+        $userHomePath = [System.Environment]::GetEnvironmentVariable("HOME")
         $scanPaths = @(
-            "$userHome/Downloads",
-            "$userHome/.config",
-            "$userHome/.local",
-            "$userHome/.ssh",
-            "$userHome",
+            "$userHomePath/Downloads",
+            "$userHomePath/.config",
+            "$userHomePath/.local",
+            "$userHomePath/.ssh",
+            "$userHomePath",
             "/tmp",
-            "$userHome/.mozilla/firefox",
-            "$userHome/.config/google-chrome/Default"
+            "$userHomePath/.mozilla/firefox",
+            "$userHomePath/.config/google-chrome/Default"
         )
     } else {
         Write-Warning "Unsupported platform"
-        Write-GeistLog -Message "Unsupported OS in Watch-CredentialArtifacts" -Type "Warning"
+        Write-GeistLog -Message "[Warning][$Category] Unsupported OS in Watch-CredentialArtifacts" -Type "Warning"
         return
     }
 
@@ -56,8 +58,6 @@ function Watch-CredentialArtifacts {
                 $suspiciousFiles -contains $_.Name
             }
             $files += $extraFiles
-
-            # Optional size filter: ignore large files (>5MB)
             $files = $files | Where-Object { $_.Length -lt (5MB) }
 
             foreach ($file in $files | Sort-Object -Unique) {
@@ -67,49 +67,53 @@ function Watch-CredentialArtifacts {
                         foreach ($keyword in $keywords) {
                             $pattern = "$keyword\s*[:=]\s*['""]?[A-Za-z0-9\-_]{6,}"
                             if ($line -match $pattern) {
-                                $redacted = $line -replace "(['" + '"' + "]?)[A-Za-z0-9\-_]{4,}(['" + '"' + "]?)", '***'
-                                $msg = "[Credential] $($file.FullName): $redacted"
+                                $redacted = $line -replace "(['""']?)[A-Za-z0-9\-_]{4,}(['""']?)", '***'
+                                $msg = "[Credential][$Category] $($file.FullName): $redacted"
+
                                 $alerts += [PSCustomObject]@{
                                     File    = $file.FullName
                                     Keyword = $keyword
                                     Line    = $redacted
                                 }
+
+                                Write-GeistLog -Message $msg -Type "Alert"
                                 if ($AttentionOnly) {
                                     Show-GeistNotification -Title "Credential Artifact" -Message $msg
                                 }
+
+                                if ($Category -eq 'Remedial' -and $PSCmdlet.ShouldProcess($file.FullName, "Remediate credential artifact")) {
+                                    Write-GeistLog -Message "[Remedial] Would act on: $($file.FullName)" -Type "Warning"
+                                }
+
+                                Invoke-ResponderFor 'Watch-CredentialArtifacts'
                                 break
                             }
                         }
                     }
                 } catch {
-                    Write-GeistLog -Message "Error reading $($file.FullName): $_" -Type "Warning"
+                    Write-GeistLog -Message "[Warning][$Category] Error reading $($file.FullName): $_" -Type "Warning"
                 }
             }
         } catch {
-            Write-GeistLog -Message "Error scanning '{$path}': $_" -Type "Warning"
+            Write-GeistLog -Message "[Warning][$Category] Error scanning '$path': $_" -Type "Warning"
         }
     }
 
     if (-not $alerts) {
         Write-Host "[✓] No credential artifacts found." -ForegroundColor Green
-        Write-GeistLog -Message "No findings in Watch-CredentialArtifacts"
+        Write-GeistLog -Message "No findings in Watch-CredentialArtifacts [$Category]"
         return
     }
 
-    Write-GeistLog -Message "Completed Watch-CredentialArtifacts"
+    Write-GeistLog -Message "Completed Watch-CredentialArtifacts [$Category]"
     Write-Host "[✓] Credential scan complete. Findings: $($alerts.Count)" -ForegroundColor Yellow
 
-    # Optional GUI preview
     if ($Host.UI.RawUI.WindowTitle -and (Get-Command Out-GridView -ErrorAction SilentlyContinue)) {
         $alerts | Out-GridView -Title "Credential Artifacts Found"
     }
 
-    # Skip export if AttentionOnly is used
-    if ($AttentionOnly) {
-        return
-    }
+    if ($AttentionOnly) { return }
 
-    # Prompt for export format
     if ($OutputPrompt) {
         Write-Host ""
         Write-Host "[?] Export format options:" -ForegroundColor Cyan

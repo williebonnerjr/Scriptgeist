@@ -1,14 +1,17 @@
 function Watch-NetworkAnomalies {
-    [CmdletBinding()]
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
     param (
         [int]$IntervalSeconds = 30,
         [int]$SummaryIntervalMinutes = 15,
         [int]$FrequentThreshold = 10,
-        [int]$BandwidthThresholdMB = 20
+        [int]$BandwidthThresholdMB = 20,
+        [ValidateSet("Passive", "Interactive", "Remedial")]
+        [string]$Category = "Passive",
+        [switch]$AttentionOnly
     )
 
     Write-Host "[*] Scriptgeist: Network Sentinel engaged..." -ForegroundColor Cyan
-    Write-GeistLog -Message "Started Watch-NetworkAnomalies daemon"
+    Write-GeistLog -Message "Started Watch-NetworkAnomalies daemon [$Category]"
 
     $global:Scriptgeist_NetworkMonitorRunning = $true
     $nextSummaryTime = (Get-Date).AddMinutes($SummaryIntervalMinutes)
@@ -53,12 +56,11 @@ function Watch-NetworkAnomalies {
 
     while ($global:Scriptgeist_NetworkMonitorRunning) {
         try {
-            # 🌍 Collect current connections
             $connections = @()
             if ($IsWindows) {
                 $connections = Get-NetTCPConnection -State Established |
                     Where-Object { $_.RemoteAddress -notlike "127.*" -and $_.RemoteAddress -ne "::1" } |
-                    Select-Object -Property RemoteAddress, RemotePort
+                    Select-Object RemoteAddress, RemotePort
             } elseif ($IsLinux -or $IsMacOS) {
                 $raw = netstat -nt 2>$null | Select-String "ESTABLISHED"
                 $connections = foreach ($line in $raw) {
@@ -78,31 +80,39 @@ function Watch-NetworkAnomalies {
                 } else {
                     $connectionCounts[$key] = 1
                     $geo = Resolve-GeoIP $conn.RemoteAddress
-                    $msg = "🕵️ New IP: $key ($geo)"
+                    $msg = "🕵️ [$Category] New IP: $key ($geo)"
                     Write-GeistLog -Message $msg -Type "Alert"
-                    $summaryLog += $msg
+                    if (-not $AttentionOnly) { $summaryLog += $msg }
 
-                    # 🔎 Suspicious TLD check
                     try {
                         $domain = ([System.Net.Dns]::GetHostEntry($conn.RemoteAddress)).HostName
                         if ($suspiciousTLDs | Where-Object { $domain -like "*$_" }) {
-                            $alert = "🚨 Suspicious TLD in: $domain ($key)"
+                            $alert = "🚨 [$Category] Suspicious TLD in: $domain ($key)"
                             Write-GeistLog -Message $alert -Type "Warning"
-                            $summaryLog += $alert
+                            if (-not $AttentionOnly) { $summaryLog += $alert }
+
+                            if ($Category -eq 'Remedial' -and $PSCmdlet.ShouldProcess($domain, "Isolate suspicious connection")) {
+                                Write-GeistLog -Message "[Remedial] Would isolate/drop connection to $domain" -Type "Warning"
+                            }
+
+                            Invoke-ResponderFor 'Watch-NetworkAnomalies'
                         }
-                    } catch {
-                        # DNS resolution failure is acceptable
-                    }
+                    } catch { }
                 }
 
                 if ($connectionCounts[$key] -eq $FrequentThreshold) {
-                    $warn = "⚠️ Frequent connection: $key ($FrequentThreshold+ times)"
+                    $warn = "⚠️ [$Category] Frequent connection: $key ($FrequentThreshold+ times)"
                     Write-GeistLog -Message $warn -Type "Warning"
-                    $summaryLog += $warn
+                    if (-not $AttentionOnly) { $summaryLog += $warn }
+
+                    if ($Category -eq 'Remedial' -and $PSCmdlet.ShouldProcess($key, "Throttle or drop frequent connection")) {
+                        Write-GeistLog -Message "[Remedial] Would throttle/drop frequent connection: $key" -Type "Warning"
+                    }
+
+                    Invoke-ResponderFor 'Watch-NetworkAnomalies'
                 }
             }
 
-            # 📶 Bandwidth usage spike
             $current = Get-BandwidthUsage
             if ($current -is [System.Management.Automation.PSObject]) {
                 $deltaRX = ($current.RX - $prevBandwidth.RX) / 1MB
@@ -113,22 +123,27 @@ function Watch-NetworkAnomalies {
             }
 
             if ($deltaTX -gt $BandwidthThresholdMB -or $deltaRX -gt $BandwidthThresholdMB) {
-                $msg = "📶 Bandwidth alert: RX=$([math]::Round($deltaRX,2)) MB, TX=$([math]::Round($deltaTX,2)) MB in $IntervalSeconds sec"
+                $msg = "📶 [$Category] Bandwidth alert: RX=$([math]::Round($deltaRX,2)) MB, TX=$([math]::Round($deltaTX,2)) MB"
                 Write-GeistLog -Message $msg -Type "Warning"
-                $summaryLog += $msg
+                if (-not $AttentionOnly) { $summaryLog += $msg }
+
+                if ($Category -eq 'Remedial' -and $PSCmdlet.ShouldProcess("Network", "Alert or block bandwidth anomaly")) {
+                    Write-GeistLog -Message "[Remedial] Would take network action on bandwidth anomaly." -Type "Warning"
+                }
+
+                Invoke-ResponderFor 'Watch-NetworkAnomalies'
             }
 
             $prevBandwidth = $current
 
-            # ⏰ Summary time
             if ((Get-Date) -ge $nextSummaryTime) {
-                if ($summaryLog.Count -gt 0) {
+                if ($summaryLog.Count -gt 0 -and -not $AttentionOnly) {
                     $notif = "$($summaryLog.Count) anomalies in last $SummaryIntervalMinutes min"
                     Show-GeistNotification -Title "Network Sentinel" -Message $notif
                     Write-Host "`n🌐 Summary:" -ForegroundColor Yellow
                     $summaryLog | ForEach-Object { Write-Host "• $_" -ForegroundColor DarkYellow }
                     $summaryLog = @()
-                } else {
+                } elseif (-not $AttentionOnly) {
                     Write-Host "`n✅ No network anomalies detected." -ForegroundColor Green
                 }
                 $nextSummaryTime = (Get-Date).AddMinutes($SummaryIntervalMinutes)
@@ -136,10 +151,10 @@ function Watch-NetworkAnomalies {
 
             Start-Sleep -Seconds $IntervalSeconds
         } catch {
-            Write-GeistLog -Message "Error in network monitor loop: $_" -Type "Error"
+            Write-GeistLog -Message "[$Category] Error in network monitor loop: $_" -Type "Error"
         }
     }
 
-    Write-GeistLog -Message "Stopped Watch-NetworkAnomalies daemon"
+    Write-GeistLog -Message "Stopped Watch-NetworkAnomalies daemon [$Category]"
     Write-Host "[x] Network monitor stopped." -ForegroundColor Yellow
 }

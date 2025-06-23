@@ -2,7 +2,6 @@
 # Scriptgeist.psm1 - Core Loader and Launcher
 # ============================
 
-# Prevent duplication of notification function
 if (Get-Command Show-GeistNotification -ErrorAction SilentlyContinue) {
     Remove-Item function:Show-GeistNotification -Force
 }
@@ -13,9 +12,7 @@ if (Get-Command Show-GeistNotification -ErrorAction SilentlyContinue) {
 function Write-GeistLog {
     [CmdletBinding()]
     param (
-        [Parameter(Mandatory)]
-        [string]$Message,
-
+        [Parameter(Mandatory)][string]$Message,
         [ValidateSet("Info", "Warning", "Error", "Alert")]
         [string]$Type = "Info"
     )
@@ -23,7 +20,6 @@ function Write-GeistLog {
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $line = "[$timestamp] [$Type] $Message"
 
-    # Resolve script root safely
     $root = if ($PSScriptRoot) {
         $PSScriptRoot
     } elseif ($MyInvocation.MyCommand.Path) {
@@ -79,6 +75,35 @@ function Show-GeistNotification {
         }
     } else {
         Write-Host "$Title`n$Message" -ForegroundColor Yellow
+    }
+}
+
+# ============================
+# Resolver Router
+# ============================
+function Invoke-ResponderFor {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory)][string]$WatcherName
+    )
+
+    switch ($WatcherName) {
+        'Watch-ProcessAnomalies'       { Stop-MaliciousProcess }
+        'Watch-NetworkAnomalies'       { Block-ThreatIP }
+        'Watch-LogTampering'           { Set-Quarantine }
+        'Watch-CredentialArtifacts'    { Start-AutoRemediate }
+        'Watch-GuestSessions'          { Invoke-Isolation }
+        'Watch-SystemIntegrity'        { Start-AutoRemediate }
+        'Watch-PersistenceMechanisms'  { Set-Quarantine }
+        'Watch-FileSurveillance'       { Stop-MaliciousProcess }
+        'Watch-PrivilegedEscalations'  { Invoke-Isolation }
+        'Watch-UserAccountChanges'     { Start-AutoRemediate }
+        'Watch-ExternalMounts'         { Set-Quarantine }
+        'Watch-RemoteAccessChanges'    { Block-ThreatIP }
+        'Watch-SystemLogs'             { Start-AutoRemediate }
+        default {
+            Write-Warning "No responder defined for $WatcherName"
+        }
     }
 }
 
@@ -155,17 +180,26 @@ function Start-Scriptgeist {
             Write-Host "[~] Starting $watcher..."
             if (Get-Command -Name $watcher -ErrorAction SilentlyContinue) {
                 try {
-                    & $watcher
+                    Start-Job -ScriptBlock {
+                        param($fn)
+                        & $fn
+                    } -ArgumentList $watcher | Out-Null
+
+                    Write-GeistLog -Message "Started $watcher as background job" -Type "Info"
                 } catch {
                     Write-Warning "$watcher encountered an error: $_"
+                    Write-GeistLog -Message "$watcher failed: $_" -Type "Error"
                 }
             } else {
                 Write-Warning "$watcher is not available."
+                Write-GeistLog -Message "$watcher not available." -Type "Warning"
             }
         }
 
         Write-Host "`n✅ Scriptgeist is running." -ForegroundColor Green
+        Write-GeistLog -Message "Scriptgeist startup complete." -Type "Info"
     } catch {
         Write-Error "❌ Critical failure on start: $_"
+        Write-GeistLog -Message "Critical startup failure: $_" -Type "Error"
     }
 }

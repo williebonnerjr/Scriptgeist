@@ -1,5 +1,5 @@
 function Stop-MaliciousProcess {
-    [CmdletBinding()]
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
     param (
         [Parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
@@ -10,9 +10,12 @@ function Stop-MaliciousProcess {
 
     try {
         $proc = Get-Process -Name $ProcessName -ErrorAction Stop
-        $proc | Stop-Process -Force
-        Write-GeistLog -Message "Terminated process: $ProcessName" -Type Success
+
+        if ($PSCmdlet.ShouldProcess("Process: $ProcessName", "Terminate")) {
+            $proc | Stop-Process -Force
+            Write-GeistLog -Message "Terminated process: $ProcessName" -Type "Response"
+        }
     } catch {
-        Write-GeistLog -Message "Failed to kill '{$ProcessName}': $_" -Type Warning
+        Write-GeistLog -Message "Failed to kill '$ProcessName': $_" -Type Warning
     }
 }

@@ -15,7 +15,10 @@ function Watch-GuestSessions {
             $currentSessions = @()
 
             if ($IsWindows) {
-                $queryOutput = (query user 2>$null) -replace "\s{2,}", "," | Where-Object { $_ -match "^>" -or $_ -match "^\s*\w+" }
+                $queryOutput = (query user 2>$null) -replace "\s{2,}", "," | Where-Object {
+                    $_ -match "^>" -or $_ -match "^\s*\w+"
+                }
+
                 foreach ($line in $queryOutput) {
                     $user = ($line -split ",")[0].Trim(">")
                     if ($user -and $user -notmatch "USERNAME") {
@@ -37,6 +40,7 @@ function Watch-GuestSessions {
                 $msg = "🧍 Guest session detected: $user at $timestamp"
                 Write-GeistLog -Message $msg -Type "Alert"
                 Show-GeistNotification -Title "Scriptgeist Alert" -Message $msg
+                Invoke-ResponderFor 'Watch-GuestSessions'
             }
 
             $previousSessions = $currentSessions

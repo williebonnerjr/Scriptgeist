@@ -1,13 +1,16 @@
 function Watch-LogReplicator {
-    [CmdletBinding()]
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
     param (
         [string]$LogDir = "$PSScriptRoot/../Logs",
         [int]$IntervalSeconds = 30,
-        [switch]$EnableNotifications
+        [switch]$EnableNotifications,
+        [switch]$AttentionOnly,
+        [ValidateSet('Passive', 'Interactive', 'Remedial')]
+        [string]$Category = 'Passive'
     )
 
     Write-Host "[*] Scriptgeist Log Replicator engaged..." -ForegroundColor Cyan
-    Write-GeistLog -Message "Started Watch-LogReplicator daemon"
+    Write-GeistLog -Message "Started Watch-LogReplicator daemon [$Category]"
 
     $global:Scriptgeist_LogReplicatorRunning = $true
     $prevHashes = @{}
@@ -26,32 +29,40 @@ function Watch-LogReplicator {
                     $archiveName = "LogCopy_${platformTag}_$timestamp.zip"
                     $archivePath = Join-Path $LogDir $archiveName
 
-                    try {
-                        if ($IsWindows) {
-                            Compress-Archive -Path $log.FullName -DestinationPath $archivePath -Force
-                        } elseif ($IsLinux -or $IsMacOS) {
-                            Push-Location $log.DirectoryName
-                            & zip -j -q "$archivePath" "$($log.Name)" 2>$null
-                            Pop-Location
-                        }
+                    if ($PSCmdlet.ShouldProcess($log.FullName, "Archive modified log as $archiveName")) {
+                        try {
+                            if ($IsWindows) {
+                                Compress-Archive -Path $log.FullName -DestinationPath $archivePath -Force
+                            } elseif ($IsLinux -or $IsMacOS) {
+                                Push-Location $log.DirectoryName
+                                & zip -j -q "$archivePath" "$($log.Name)" 2>$null
+                                Pop-Location
+                            }
 
-                        Write-GeistLog -Message "Archived modified log: $($log.Name) to $archiveName" -Type Info
+                            Write-GeistLog -Message "[$Category] Archived modified log: $($log.Name) → $archiveName" -Type Info
 
-                        if ($EnableNotifications) {
-                            Show-GeistNotification -Title "Log Archive Created" -Message "Backup saved: $archiveName"
+                            if ($EnableNotifications -and -not $AttentionOnly) {
+                                Show-GeistNotification -Title "Log Archive Created" -Message "Backup saved: $archiveName"
+                            }
+
+                            if ($Category -eq 'Remedial') {
+                                Write-GeistLog -Message "[Remedial] Would initiate upload or vault storage for: $archiveName" -Type Info
+                                Invoke-ResponderFor 'Watch-LogReplicator'
+                            }
+
+                        } catch {
+                            Write-GeistLog -Message "[Warning][$Category] Compression failed for $($log.Name): $_" -Type Warning
                         }
-                    } catch {
-                        Write-GeistLog -Message "Compression failed for $($log.Name): $_" -Type Warning
                     }
                 }
             }
 
             Start-Sleep -Seconds $IntervalSeconds
         } catch {
-            Write-GeistLog -Message "Error in Watch-LogReplicator loop: $_" -Type Error
+            Write-GeistLog -Message "[Error][$Category] Error in Watch-LogReplicator loop: $_" -Type Error
         }
     }
 
-    Write-GeistLog -Message "Stopped Watch-LogReplicator daemon"
+    Write-GeistLog -Message "Stopped Watch-LogReplicator daemon [$Category]"
     Write-Host "[x] Log replicator stopped." -ForegroundColor Yellow
 }

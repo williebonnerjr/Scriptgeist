@@ -10,28 +10,23 @@ function Watch-ProcessAnomalies {
 
     $global:Scriptgeist_Running = $true
     $knownBadRegex = 'mimikatz|ncat|powershell|certutil|bitsadmin|nmap|meterpreter|mshta|rundll32|cmd|wget|curl'
-
     $seenPIDs = @{}
 
     while ($global:Scriptgeist_Running) {
         try {
-            $procs = if ($IsWindows) {
-                Get-Process -ErrorAction SilentlyContinue
-            } elseif ($IsLinux -or $IsMacOS) {
-                Get-Process -ErrorAction SilentlyContinue  # Works cross-platform in PowerShell 7+
-            } else {
-                Write-Warning "Unsupported OS in Watch-ProcessAnomalies"
-                return
-            }
+            $procs = Get-Process -ErrorAction SilentlyContinue
 
             foreach ($proc in $procs) {
                 if ($proc.ProcessName -match $knownBadRegex -and -not $seenPIDs.ContainsKey($proc.Id)) {
                     $msg = "⚠️ Suspicious process detected: $($proc.ProcessName) (PID: $($proc.Id))"
                     Write-Warning $msg
                     Write-GeistLog -Message $msg -Type "Alert"
+
                     if ($AttentionOnly) {
                         Show-GeistNotification -Title "Suspicious Process" -Message $msg
                     }
+
+                    Invoke-ResponderFor 'Watch-ProcessAnomalies'
                     $seenPIDs[$proc.Id] = $true
                 }
             }

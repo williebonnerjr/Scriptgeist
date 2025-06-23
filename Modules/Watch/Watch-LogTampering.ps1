@@ -1,41 +1,27 @@
-function Write-GeistLog {
+function Watch-LogTampering {
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
     param (
-        [string]$Message,
-        [string]$Type = "Info"
-    )
-
-    $logPath = "$PSScriptRoot\Scriptgeist.log"
-
-    # Ensure log file exists
-    if (-not (Test-Path $logPath)) {
-        New-Item -Path $logPath -ItemType File -Force | Out-Null
-    }
-
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $entry = "[$timestamp][$Type] $Message"
-    Add-Content -Path $logPath -Value $entry
-}
-
-function Watch-LogTampering { 
-    [CmdletBinding()]
-    param (
-        [int]$PollIntervalSeconds = 30
+        [int]$PollIntervalSeconds = 30,
+        [ValidateSet('Passive', 'Interactive', 'Remedial')]
+        [string]$Category = 'Passive',
+        [switch]$AttentionOnly
     )
 
     Write-Host "[*] Monitoring for log tampering..." -ForegroundColor Cyan
-    Write-GeistLog -Message "Started Watch-LogTampering daemon"
+    Write-GeistLog -Message "Started Watch-LogTampering daemon [$Category]"
 
+    $global:Scriptgeist_LogTamperingRunning = $true
     $isAdmin = $false
+
     try {
         $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
         $isAdmin = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
     } catch {
         $isAdmin = $false
-        Write-GeistLog -Message "Could not determine admin rights: $_" -Type "Warning"
+        Write-GeistLog -Message "[Warning][$Category] Could not determine admin rights: $_" -Type "Warning"
     }
 
     $logPaths = @()
-
     if ($isAdmin) {
         if ($IsWindows) {
             $logPaths += "C:\Windows\System32\winevt\Logs"
@@ -48,7 +34,7 @@ function Watch-LogTampering {
         }
     } else {
         Write-Warning "Running without admin rights. System-level log monitoring will be limited."
-        Write-GeistLog -Message "Running without admin rights. Limited log coverage." -Type "Warning"
+        Write-GeistLog -Message "[Warning][$Category] Running without admin rights. Limited log coverage." -Type "Warning"
 
         if ($IsWindows) {
             $logPaths += "$env:APPDATA"
@@ -59,28 +45,28 @@ function Watch-LogTampering {
         }
     }
 
-    $fileSnapshots = @{ }
+    $fileSnapshots = @{}
     foreach ($path in $logPaths) {
         if (Test-Path $path) {
             $files = Get-ChildItem -Path $path -Recurse -File -ErrorAction SilentlyContinue
             foreach ($f in $files) {
                 $fileSnapshots[$f.FullName] = @{ Size = $f.Length; LastWriteTime = $f.LastWriteTimeUtc }
             }
-            Write-GeistLog -Message "Loaded snapshot from $path with $($files.Count) files."
+            Write-GeistLog -Message "[$Category] Loaded snapshot from $path with $($files.Count) files."
         } else {
-            Write-GeistLog -Message "Log path not found: $path" -Type "Warning"
+            Write-GeistLog -Message "[Warning][$Category] Log path not found: $path" -Type "Warning"
         }
     }
 
     if ($fileSnapshots.Count -eq 0) {
         Write-Host "[!] No initial log files found to monitor." -ForegroundColor Yellow
-        Write-GeistLog -Message "No log files found during initial snapshot." -Type "Warning"
+        Write-GeistLog -Message "[Warning][$Category] No log files found during initial snapshot."
     } else {
         Write-Host "[+] Monitoring initialized with $($fileSnapshots.Count) files." -ForegroundColor Green
-        Write-GeistLog -Message "Monitoring initialized with $($fileSnapshots.Count) files."
+        Write-GeistLog -Message "[$Category] Monitoring initialized with $($fileSnapshots.Count) files."
     }
 
-    while ($true) {
+    while ($global:Scriptgeist_LogTamperingRunning) {
         Start-Sleep -Seconds $PollIntervalSeconds
 
         foreach ($path in $logPaths) {
@@ -91,30 +77,45 @@ function Watch-LogTampering {
                 if ($fileSnapshots.ContainsKey($file.FullName)) {
                     $old = $fileSnapshots[$file.FullName]
                     if ($file.Length -lt $old.Size -or $file.LastWriteTimeUtc -lt $old.LastWriteTime) {
-                        $msg = "⚠️ Log tampering suspected: $($file.FullName)"
+                        $msg = "⚠️ [$Category] Log tampering suspected: $($file.FullName)"
                         Write-Warning $msg
                         Write-GeistLog -Message $msg -Type "Alert"
                         Show-GeistNotification -Title "Scriptgeist Log Watcher" -Message "Tampering suspected: $($file.Name)"
+
+                        if ($Category -eq 'Remedial' -and $PSCmdlet.ShouldProcess($file.FullName, "Remedial action for tampered log")) {
+                            Write-GeistLog -Message "[Remedial] Would isolate/log quarantine action for: $($file.FullName)" -Type "Warning"
+                        }
+
+                        Invoke-ResponderFor 'Watch-LogTampering'
                     }
                     $fileSnapshots[$file.FullName] = @{ Size = $file.Length; LastWriteTime = $file.LastWriteTimeUtc }
                 } else {
-                    $msg = "🆕 New log detected: $($file.FullName)"
-                    Write-GeistLog -Message $msg
+                    $msg = "🆕 [$Category] New log detected: $($file.FullName)"
+                    if (-not $AttentionOnly) {
+                        Write-GeistLog -Message $msg -Type "Info"
+                    }
                     $fileSnapshots[$file.FullName] = @{ Size = $file.Length; LastWriteTime = $file.LastWriteTimeUtc }
                 }
             }
 
-            # Check for deletions
-            $knownKeys = $fileSnapshots.Keys
-            foreach ($knownFile in $knownKeys) {
+            foreach ($knownFile in $fileSnapshots.Keys.Clone()) {
                 if (-not (Test-Path $knownFile)) {
-                    $msg = "❌ Log file deleted: $knownFile"
+                    $msg = "❌ [$Category] Log file deleted: $knownFile"
                     Write-Warning $msg
                     Write-GeistLog -Message $msg -Type "Alert"
                     Show-GeistNotification -Title "Scriptgeist Log Watcher" -Message "Log deleted: $(Split-Path $knownFile -Leaf)"
                     $fileSnapshots.Remove($knownFile)
+
+                    if ($Category -eq 'Remedial' -and $PSCmdlet.ShouldProcess($knownFile, "Flag deleted log for audit")) {
+                        Write-GeistLog -Message "[Remedial] Would trigger audit review for deleted log: $knownFile" -Type "Warning"
+                    }
+
+                    Invoke-ResponderFor 'Watch-LogTampering'
                 }
             }
         }
     }
+
+    Write-GeistLog -Message "Stopped Watch-LogTampering daemon [$Category]"
+    Write-Host "[x] Watch-LogTampering stopped." -ForegroundColor Yellow
 }

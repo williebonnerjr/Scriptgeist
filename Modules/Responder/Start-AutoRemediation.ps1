@@ -1,5 +1,5 @@
 function Start-AutoRemediate {
-    [CmdletBinding()]
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
     param (
         [Parameter(Mandatory)]
         [ValidateSet("process", "file", "ip", "isolation")]
@@ -17,11 +17,15 @@ function Start-AutoRemediate {
                 Write-GeistLog -Message "Missing -Target for process termination" -Type Error
                 return
             }
-            if ($Confirm -and -not (Read-Host "Kill process '$Target'? (y/n)") -match '^y') {
+
+            if ($Confirm -and -not ((Read-Host "Kill process '$Target'? (y/n)") -match '^y')) {
                 Write-GeistLog -Message "User declined process termination"
                 return
             }
-            Respond-KillProcess -ProcessName $Target
+
+            if ($PSCmdlet.ShouldProcess("Process '$Target'", "Terminate process")) {
+                Respond-KillProcess -ProcessName $Target
+            }
         }
 
         "file" {
@@ -29,11 +33,15 @@ function Start-AutoRemediate {
                 Write-GeistLog -Message "Missing -Target for file quarantine" -Type Error
                 return
             }
-            if ($Confirm -and -not (Read-Host "Quarantine file '$Target'? (y/n)") -match '^y') {
+
+            if ($Confirm -and -not ((Read-Host "Quarantine file '$Target'? (y/n)") -match '^y')) {
                 Write-GeistLog -Message "User declined file quarantine"
                 return
             }
-            Respond-QuarantineFile -FilePath $Target
+
+            if ($PSCmdlet.ShouldProcess("File '$Target'", "Quarantine file")) {
+                Respond-QuarantineFile -FilePath $Target
+            }
         }
 
         "ip" {
@@ -41,19 +49,26 @@ function Start-AutoRemediate {
                 Write-GeistLog -Message "Missing -Target for IP block" -Type Error
                 return
             }
-            if ($Confirm -and -not (Read-Host "Block IP '$Target'? (y/n)") -match '^y') {
+
+            if ($Confirm -and -not ((Read-Host "Block IP '$Target'? (y/n)") -match '^y')) {
                 Write-GeistLog -Message "User declined IP block"
                 return
             }
-            Respond-BlockIP -IPAddress $Target
+
+            if ($PSCmdlet.ShouldProcess("IP '$Target'", "Block IP address")) {
+                Respond-BlockIP -IPAddress $Target
+            }
         }
 
         "isolation" {
-            if ($Confirm -and -not (Read-Host "Isolate this host from network? (y/n)") -match '^y') {
+            if ($Confirm -and -not ((Read-Host "Isolate this host from network? (y/n)") -match '^y')) {
                 Write-GeistLog -Message "User declined host isolation"
                 return
             }
-            Respond-IsolateHost
+
+            if ($PSCmdlet.ShouldProcess("System", "Initiate full host network isolation")) {
+                Respond-IsolateHost
+            }
         }
 
         default {
