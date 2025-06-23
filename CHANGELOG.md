@@ -20,3 +20,7 @@
 ## v1.1.0 - 2025-06-22
 - Release v1.1.0 - Update: Activated Watch-SystemIntegrity, Watch-GuestSessions, and LogTampering in launcher - Add: System integrity watcher with hash tracking and admin-aware scope - Add: Guest session module and any new supporting changes - Update: Added Watch-LogTampering, modified Watch-ProcessAnomalies, added utility and release scaffolds
 
+
+## v2.0.0 - 2025-06-22
+- Release v1.1.0 - Release v1.1.0 - Release v1.0.0 - Update: Activated Watch-SystemIntegrity, Watch-GuestSessions, and LogTampering in launcher - Add: System integrity watcher with hash tracking and admin-aware scope
+
