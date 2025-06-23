@@ -1,6 +1,6 @@
 @{
     RootModule        = 'Scriptgeist.psm1'
-    ModuleVersion     = '0.1.0'
+    ModuleVersion     = '1.0.0'
     Author            = 'Willie Bonner Jr'
     Description       = 'An intelligent PowerShell sentinel for system monitoring, anomaly detection, and proactive defense.'
     FunctionsToExport = @('Start-Scriptgeist', 'Watch-ProcessAnomalies')
