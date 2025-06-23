@@ -53,7 +53,7 @@ function Watch-NetworkAnomalies {
 
     while ($global:Scriptgeist_NetworkMonitorRunning) {
         try {
-            # 🌍 Get connections
+            # 🌍 Collect current connections
             $connections = @()
             if ($IsWindows) {
                 $connections = Get-NetTCPConnection -State Established |
@@ -85,13 +85,13 @@ function Watch-NetworkAnomalies {
                     # 🔎 Suspicious TLD check
                     try {
                         $domain = ([System.Net.Dns]::GetHostEntry($conn.RemoteAddress)).HostName
-                        if ($suspiciousTLDs | Where-Object { $domain.EndsWith($_) }) {
+                        if ($suspiciousTLDs | Where-Object { $domain -like "*$_" }) {
                             $alert = "🚨 Suspicious TLD in: $domain ($key)"
                             Write-GeistLog -Message $alert -Type "Warning"
                             $summaryLog += $alert
                         }
                     } catch {
-                        # Cannot resolve; ignore
+                        # DNS resolution failure is acceptable
                     }
                 }
 
@@ -102,7 +102,7 @@ function Watch-NetworkAnomalies {
                 }
             }
 
-            # 📶 Bandwidth Spike Detection
+            # 📶 Bandwidth usage spike
             $current = Get-BandwidthUsage
             if ($current -is [System.Management.Automation.PSObject]) {
                 $deltaRX = ($current.RX - $prevBandwidth.RX) / 1MB
@@ -120,7 +120,7 @@ function Watch-NetworkAnomalies {
 
             $prevBandwidth = $current
 
-            # ⏰ Time for summary
+            # ⏰ Summary time
             if ((Get-Date) -ge $nextSummaryTime) {
                 if ($summaryLog.Count -gt 0) {
                     $notif = "$($summaryLog.Count) anomalies in last $SummaryIntervalMinutes min"

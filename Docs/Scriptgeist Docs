@@ -1,0 +1,213 @@
+# Scriptgeist Documentation
+
+This documentation provides detailed information on each major component of the **Scriptgeist** project. It includes usage instructions, capabilities, platform support, and security considerations.
+
+---
+
+## 1. Introduction
+
+Scriptgeist is a cross-platform, modular cybersecurity and system auditing framework written in PowerShell. It supports Windows, Linux, and macOS, and includes modules for monitoring, threat response, reporting, and GUI-based interaction.
+
+---
+
+## 2. Core Components
+
+### 2.1 `Scriptgeist.psm1`
+
+**Purpose:** Acts as the core module loader and dispatcher for all subcomponents.
+
+**Capabilities:**
+
+* Dynamically imports submodules (Monitor, Responder, Reporter, etc.).
+* Provides the `Invoke-Scriptgeist` entry point.
+* Supports command-line and GUI interfaces.
+* Enables notifications, cross-platform compatibility, and environment detection.
+
+**Usage:**
+
+```powershell
+Import-Module ./Scriptgeist.psm1
+Invoke-Scriptgeist -GUI
+```
+
+---
+
+## 3. Monitor Modules
+
+### 3.1 `Watch-NetworkAnomalies.ps1`
+
+**Purpose:** Detects suspicious network behavior such as unauthorized connections, DNS anomalies, and bandwidth spikes.
+
+**Capabilities:**
+
+* Logs frequent external IPs and domains.
+* Flags suspicious TLDs (e.g., `.ru`, `.tk`).
+* Supports GeoIP integration and optional reverse lookups.
+* Alerts on significant outbound traffic or port scans.
+
+**Cross-Platform:** Yes
+
+### 3.2 `Watch-LogTampering.ps1`
+
+**Purpose:** Detects potential log tampering activity or missing entries.
+
+**Capabilities:**
+
+* Validates sequence and integrity of logs.
+* Alerts if logs are cleared or backdated.
+* Adapts behavior if admin privileges are unavailable.
+
+**Cross-Platform:** Yes (Windows: EventLogs; Linux: journalctl or `/var/log`)
+
+### 3.3 `Watch-GuestSessions.ps1`
+
+**Purpose:** Detects use of guest or untrusted sessions.
+
+**Capabilities:**
+
+* Checks for logins from guest accounts.
+* Tracks logon type and session sources.
+* Can operate in background or interactively.
+
+**Cross-Platform:** Yes
+
+### 3.4 `Watch-SystemIntegrity.ps1`
+
+**Purpose:** Monitors system binaries and configuration files for unauthorized changes.
+
+**Capabilities:**
+
+* Hash checks for critical binaries.
+* Flags changes to sudoers, registry hives, or startup configs.
+* Can be customized with whitelist/blacklist.
+
+**Cross-Platform:** Yes
+
+### 3.5 `Watch-PersistenceMechanisms.ps1`
+
+**Purpose:** Detects common persistence mechanisms used by malware or intruders.
+
+**Capabilities:**
+
+* Registry `Run` keys (Windows).
+* Scheduled tasks, crontabs.
+* Startup folders, launch agents.
+
+**Cross-Platform:** Yes
+
+---
+
+## 4. Responder Modules
+
+### 4.1 `Respond-TerminateThreat.ps1`
+
+**Purpose:** Terminates suspicious or malicious processes based on given PID or name.
+
+**Usage:**
+
+```powershell
+Respond-TerminateThreat -ProcessName "suspicious.exe"
+```
+
+### 4.2 `Respond-IsolateSystem.ps1`
+
+**Purpose:** Immediately cuts off external communications for the current machine.
+
+**Capabilities:**
+
+* Disables network interfaces.
+* Kills active connections.
+* (Optional) Locks workstation.
+
+### 4.3 `Respond-RestoreBackup.ps1`
+
+**Purpose:** Restores system or file snapshots from trusted backups.
+
+**Usage:**
+
+```powershell
+Respond-RestoreBackup -TargetPath "C:\ImportantData" -From "Z:\Backups"
+```
+
+---
+
+## 5. Reporter Modules
+
+### 5.1 `Export-GeistReport.ps1`
+
+**Purpose:** Exports analysis and monitoring output into secure, structured reports.
+
+**Capabilities:**
+
+* Supports `Text`, `JSON`, and `HTML` formats.
+* Optional redaction and password-protected zip export.
+* Adds system metadata: hostname, uptime, user, threat level.
+* Can be set to prevent deletion without password.
+
+**Usage:**
+
+```powershell
+Export-GeistReport -Format HTML -ReportPath "C:\Reports\Threat.html" -Encrypt
+```
+
+---
+
+## 6. GUI Tools
+
+### 6.1 `ScriptgeistGUI.ps1`
+
+**Purpose:** Provides an intuitive Windows Forms GUI for launching scans, selecting modules, and exporting reports.
+
+**Capabilities:**
+
+* Dropdowns and file selectors.
+* Integrated viewer for report previews.
+* Real-time log output window.
+
+---
+
+## 7. CLI Tools
+
+### 7.1 `Invoke-Scriptgeist.ps1`
+
+**Purpose:** Primary CLI entry point that dynamically invokes any combination of monitoring, responding, and reporting logic.
+
+**Capabilities:**
+
+* Accepts command-line switches: `-FetchLogs`, `-AttentionOnly`, `-ReportFormat`, `-Colorize`.
+* Chained execution of modules with audit logging.
+
+**Example:**
+
+```powershell
+Invoke-Scriptgeist -FetchLogs -LogType System -AttentionOnly -Colorize -ReportFormat JSON -ReportPath "./Report.json"
+```
+
+---
+
+## 8. Security Considerations
+
+* All modules log activity via `Write-GeistLog`.
+* Sensitive output can be redacted.
+* File tampering or unauthorized access attempts are recorded.
+* Supports elevation-aware behavior.
+
+---
+
+## 9. Platform Notes
+
+* **Windows:** Full feature support including Event Logs, Registry, and GUI.
+* **Linux/macOS:** Uses journalctl and file-based logs, all watcher and responder modules supported except GUI.
+* Ensure PowerShell 7+ for full compatibility across OSes.
+
+---
+
+## 10. Roadmap (Optional Section)
+
+* Add cloud-based sync for reports.
+* Integrate with Microsoft Defender / Linux auditd.
+* Real-time notification to mobile/email.
+
+---
+
+End of Documentation.

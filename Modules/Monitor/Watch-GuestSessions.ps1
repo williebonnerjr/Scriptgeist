@@ -15,9 +15,13 @@ function Watch-GuestSessions {
             $currentSessions = @()
 
             if ($IsWindows) {
-                $currentSessions = query user 2>$null | ForEach-Object {
-                    ($_ -split '\s{2,}')[0]
-                } | Where-Object { $_ -and $_ -ne "USERNAME" }
+                $queryOutput = (query user 2>$null) -replace "\s{2,}", "," | Where-Object { $_ -match "^>" -or $_ -match "^\s*\w+" }
+                foreach ($line in $queryOutput) {
+                    $user = ($line -split ",")[0].Trim(">")
+                    if ($user -and $user -notmatch "USERNAME") {
+                        $currentSessions += $user
+                    }
+                }
             } elseif ($IsLinux -or $IsMacOS) {
                 $currentSessions = who | ForEach-Object {
                     ($_ -split '\s+')[0]
@@ -25,15 +29,14 @@ function Watch-GuestSessions {
             }
 
             $newGuests = $currentSessions | Where-Object {
-                ($_ -match "guest|visitor|test") -and ($_ -notin $previousSessions)
+                ($_ -match 'guest|visitor|test') -and ($_ -notin $previousSessions)
             }
 
-            if ($newGuests.Count -gt 0) {
-                foreach ($user in $newGuests) {
-                    $msg = "Guest session detected: $user at $(Get-Date -Format 'HH:mm:ss')"
-                    Write-GeistLog -Message $msg -Type "Alert"
-                    Show-GeistNotification -Title "Scriptgeist Alert" -Message $msg
-                }
+            foreach ($user in $newGuests) {
+                $timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+                $msg = "🧍 Guest session detected: $user at $timestamp"
+                Write-GeistLog -Message $msg -Type "Alert"
+                Show-GeistNotification -Title "Scriptgeist Alert" -Message $msg
             }
 
             $previousSessions = $currentSessions

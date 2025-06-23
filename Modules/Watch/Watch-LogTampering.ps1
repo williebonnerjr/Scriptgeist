@@ -7,8 +7,14 @@ function Watch-LogTampering {
     Write-Host "[*] Monitoring for log tampering..." -ForegroundColor Cyan
     Write-GeistLog -Message "Started Watch-LogTampering daemon"
 
-    $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-   
+    $isAdmin = $false
+    try {
+        $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+        $isAdmin = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    } catch {
+        # On Linux/macOS, fallback or assume non-admin
+        $isAdmin = $false
+    }
 
     $logPaths = @()
 
@@ -68,6 +74,7 @@ function Watch-LogTampering {
                 }
             }
 
+            # Check for deletions
             $knownKeys = $fileSnapshots.Keys
             foreach ($knownFile in $knownKeys) {
                 if (-not (Test-Path $knownFile)) {
@@ -80,4 +87,4 @@ function Watch-LogTampering {
             }
         }
     }
-} 
+}

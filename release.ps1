@@ -1,13 +1,15 @@
 <#
 .SYNOPSIS
-    Automates versioning, changelog, tagging, and GitHub push for Scriptgeist.
+    Automates versioning, changelog generation, tagging, and GitHub push for Scriptgeist.
 
 .DESCRIPTION
-    Suggests version bump based on recent commit messages,
-    updates .psd1 and CHANGELOG.md, and pushes everything to GitHub.
+    Suggests a semantic version bump based on recent commit messages.
+    Updates Scriptgeist.psd1 with the new version, appends to CHANGELOG.md,
+    commits changes, tags the release, and pushes to GitHub.
 
 .EXAMPLE
     ./release.ps1
+    ./release.ps1 -BumpType minor
 #>
 
 param (
@@ -19,13 +21,23 @@ $ErrorActionPreference = "Stop"
 $modulePath = "Scriptgeist.psd1"
 $changelog = "CHANGELOG.md"
 
+# Ensure Git is available
+if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+    throw "Git is not installed or not in PATH."
+}
+
+# Ensure .psd1 file exists
+if (-not (Test-Path $modulePath)) {
+    throw "Module manifest '$modulePath' not found."
+}
+
 # Helper: Detect bump type from recent commits
 function Get-SuggestedBump {
     $commits = git log --pretty=format:"%s" -n 10
 
     $majorTerms = @("BREAKING CHANGE", "core rewrite", "architecture")
-    $minorTerms = @("feat", "add", "new watcher", "module")
-    $patchTerms = @("fix", "typo", "log", "docs", "refactor")
+    $minorTerms = @("feat", "add", "new watcher", "module", "support")
+    $patchTerms = @("fix", "typo", "log", "docs", "refactor", "test")
 
     foreach ($c in $commits) {
         if ($majorTerms | Where-Object { $c -match $_ }) { return "major" }
@@ -40,7 +52,7 @@ function Get-SuggestedBump {
     return "patch"
 }
 
-# Get current version
+# Extract current version from psd1
 $versionLine = Get-Content $modulePath | Where-Object { $_ -match "ModuleVersion\s*=\s*'(\d+)\.(\d+)\.(\d+)'" }
 if (-not $versionLine) {
     throw "Could not find ModuleVersion in $modulePath"
@@ -67,11 +79,12 @@ switch ($BumpType) {
 
 $newVersionStr = "$($newVersion[0]).$($newVersion[1]).$($newVersion[2])"
 
-# Update .psd1
+# Update version in .psd1
 (Get-Content $modulePath) -replace "'\d+\.\d+\.\d+'", "'$newVersionStr'" |
     Set-Content $modulePath
+Write-Host "`n📝 Updated Scriptgeist.psd1 to v$newVersionStr" -ForegroundColor Yellow
 
-# Create changelog entry
+# Append to CHANGELOG.md
 $date = Get-Date -Format "yyyy-MM-dd"
 $recentCommits = git log --pretty=format:"- %s" -n 5
 $entry = @"
@@ -80,11 +93,12 @@ $recentCommits
 
 "@
 Add-Content $changelog "`n$entry"
+Write-Host "🧾 Appended changelog entry for v$newVersionStr" -ForegroundColor Yellow
 
-# Git commit, tag, push
+# Git add, commit, tag, push
 git add $modulePath $changelog
 git commit -m "Release v$newVersionStr"
 git tag "v$newVersionStr"
 git push origin main --tags
 
-Write-Host "`n🎉 Scriptgeist v$newVersionStr released and pushed!" -ForegroundColor Green
+Write-Host "`n🎉 Scriptgeist v$newVersionStr released and pushed to GitHub!" -ForegroundColor Green

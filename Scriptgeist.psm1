@@ -2,8 +2,10 @@
 # Scriptgeist.psm1 - Core Loader and Launcher
 # ============================
 
-# Prevent duplication when reloading
-Remove-Item function:Show-GeistNotification -ErrorAction SilentlyContinue
+# Prevent duplication
+if (Get-Command Show-GeistNotification -ErrorAction SilentlyContinue) {
+    Remove-Item function:Show-GeistNotification -Force
+}
 
 # ============================
 # Utility: Cross-Platform Notification
@@ -50,14 +52,14 @@ function Import-ScriptgeistModules {
     foreach ($script in $modulePaths) {
         try {
             . $script.FullName
-            Write-Verbose "Loaded module: $($script.FullName)"
+            Write-Verbose "Loaded: $($script.FullName)"
         } catch {
             Write-Warning "Failed to import: $($script.FullName) - $_"
         }
     }
 }
 
-# Load modules immediately
+# Load all modules now
 Import-ScriptgeistModules
 
 # ============================
@@ -74,7 +76,6 @@ function Start-Scriptgeist {
 
     if ($VerboseMode) { $VerbosePreference = "Continue" }
 
-    # Set up logging
     $logPath = Join-Path -Path $PSScriptRoot -ChildPath "Logs"
     if (-not (Test-Path $logPath)) {
         New-Item -Path $logPath -ItemType Directory -Force | Out-Null
@@ -89,34 +90,28 @@ function Start-Scriptgeist {
     try {
         Write-Host "`n🛰️  Initializing Watchers..."
 
-        if (Get-Command -Name Watch-ProcessAnomalies -ErrorAction SilentlyContinue) {
-            Watch-ProcessAnomalies
-        } else {
-            Write-Warning "Watch-ProcessAnomalies is not available yet."
-        }
+        $watchers = @(
+            "Watch-ProcessAnomalies",
+            "Watch-NetworkAnomalies",
+            "Watch-LogTampering",
+            "Watch-CredentialArtifacts",
+            "Watch-GuestSessions",
+            "Watch-SystemIntegrity",
+            "Watch-PersistenceMechanisms",
+            "Watch-FileSurveillance",
+            "Watch-PrivilegedEscalations",
+            "Watch-UserAccountChanges",
+            "Watch-ExternalMounts",
+            "Watch-RemoteAccessChanges",
+            "Watch-SystemLogs"
+        )
 
-        if (Get-Command -Name Watch-NetworkAnomalies -ErrorAction SilentlyContinue) {
-            Watch-NetworkAnomalies
-        } else {
-            Write-Warning "Watch-NetworkAnomalies is not available yet."
-        }
-
-        if (Get-Command -Name Watch-LogTampering -ErrorAction SilentlyContinue) {
-            Watch-LogTampering
-        } else {
-            Write-Warning "Watch-LogTampering is not available yet."
-        }
-
-        if (Get-Command -Name Watch-GuestSessions -ErrorAction SilentlyContinue) {
-            Watch-GuestSessions
-        } else {
-            Write-Warning "Watch-GuestSessions is not available yet."
-        }
-
-        if (Get-Command -Name Watch-SystemIntegrity -ErrorAction SilentlyContinue) {
-            Watch-SystemIntegrity
-        } else {
-            Write-Warning "Watch-SystemIntegrity is not available yet."
+        foreach ($watcher in $watchers) {
+            if (Get-Command -Name $watcher -ErrorAction SilentlyContinue) {
+                & $watcher
+            } else {
+                Write-Warning "$watcher is not available."
+            }
         }
 
         Write-Host "`n✅ Scriptgeist is running." -ForegroundColor Green
