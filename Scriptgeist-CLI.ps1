@@ -1,6 +1,6 @@
 param (
-    [string]$Run,
-    [string]$ModuleArgs,
+    [string]$Module,
+    [string[]]$ModuleArgs,
     [switch]$List,
     [switch]$Help
 )
@@ -8,34 +8,41 @@ param (
 function Show-Help {
     Write-Host "Scriptgeist CLI Help" -ForegroundColor Cyan
     Write-Host "Usage:"
-    Write-Host "  Scriptgeist-CLI.ps1 --list"
-    Write-Host "  Scriptgeist-CLI.ps1 --run <ModuleName> [--ModuleArgs '<args>']"
-    Write-Host "  Scriptgeist-CLI.ps1 --help"
+    Write-Host "  Scriptgeist-CLI.ps1 -List"
+    Write-Host "  Scriptgeist-CLI.ps1 -Module <ModuleName> [-ModuleArgs '<args>']"
+    Write-Host "  Scriptgeist-CLI.ps1 -Help"
     Write-Host "`nExamples:"
-    Write-Host "  ./Scriptgeist-CLI.ps1 --run Watch-LogTampering"
-    Write-Host "  ./Scriptgeist-CLI.ps1 --run Watch-SystemLogs --ModuleArgs '-AttentionOnly -OutputPrompt'"
+    Write-Host "  ./Scriptgeist-CLI.ps1 -Module Watch-LogTampering"
+    Write-Host "  ./Scriptgeist-CLI.ps1 -Module Watch-SystemLogs -ModuleArgs '-AttentionOnly','-OutputPrompt'"
+    Write-Host "  ./Scriptgeist-CLI.ps1 -Module Watch-CredentialArtifacts -ModuleArgs '-OutputPrompt'"
     exit
 }
 
-if ($Help -or (-not $Run -and -not $List)) {
+if ($Help -or (-not $Module -and -not $List)) {
     Show-Help
 }
 
-# Load modules
-$moduleRoot = Join-Path $PSScriptRoot "Modules"
-$logRoot = Join-Path $PSScriptRoot "Logs"
-if (-not (Test-Path $logRoot)) { New-Item -ItemType Directory -Path $logRoot | Out-Null }
+# Safe fallback for script root
+$scriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 
+# Setup required paths
+$moduleRoot = Join-Path $scriptRoot "Modules"
+$logRoot = Join-Path $scriptRoot "Logs"
+if (-not (Test-Path $logRoot)) {
+    New-Item -ItemType Directory -Path $logRoot -Force | Out-Null
+}
+
+# Discover modules
 $moduleFiles = Get-ChildItem -Path $moduleRoot -Recurse -Filter "Watch-*.ps1" -File
-
 $modules = $moduleFiles | ForEach-Object {
     [PSCustomObject]@{
-        Name = $_.BaseName
-        Path = $_.FullName
+        Name  = $_.BaseName
+        Path  = $_.FullName
         Group = $_.Directory.Name
     }
 }
 
+# List available modules
 if ($List) {
     Write-Host "`nAvailable Scriptgeist Modules:`n" -ForegroundColor Green
     $modules | Sort-Object Group, Name | ForEach-Object {
@@ -44,10 +51,11 @@ if ($List) {
     exit
 }
 
-if ($Run) {
-    $selected = $modules | Where-Object { $_.Name -ieq $Run }
+# Run selected module
+if ($Module) {
+    $selected = $modules | Where-Object { $_.Name -ieq $Module }
     if (-not $selected) {
-        Write-Warning "Module '$Run' not found. Use --list to view available modules."
+        Write-Warning "Module '$Module' not found. Use -List to view available modules."
         exit 1
     }
 
@@ -56,9 +64,9 @@ if ($Run) {
         exit 1
     }
 
-    # Prompt for arguments if missing
     if (-not $ModuleArgs) {
-        $ModuleArgs = Read-Host "Enter arguments for $($selected.Name) (or press Enter for none)"
+        $argInput = Read-Host "Enter arguments for $($selected.Name) (or press Enter for none)"
+        $ModuleArgs = if ($argInput) { $argInput -split '\s+' } else { @() }
     }
 
     $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
@@ -67,13 +75,11 @@ if ($Run) {
     Write-Host "`n[*] Executing $($selected.Name)..." -ForegroundColor Yellow
     Write-Host "[*] Logging to: $logPath`n"
 
-    $splitArgs = $ModuleArgs -split '\s+'
-    
     try {
-        & powershell -NoProfile -ExecutionPolicy Bypass -File $selected.Path @splitArgs *>> $logPath
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $selected.Path @ModuleArgs *>> $logPath
         Write-Host "`n[✓] Execution completed. Output logged to: $logPath" -ForegroundColor Green
     } catch {
-        Write-Warning "Error occurred: $_"
+        Write-Warning "Error occurred while executing $($selected.Name): $_"
         Add-Content -Path $logPath -Value "ERROR: $_"
     }
 }

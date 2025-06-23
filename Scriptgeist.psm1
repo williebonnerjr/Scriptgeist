@@ -2,9 +2,48 @@
 # Scriptgeist.psm1 - Core Loader and Launcher
 # ============================
 
-# Prevent duplication
+# Prevent duplication of notification function
 if (Get-Command Show-GeistNotification -ErrorAction SilentlyContinue) {
     Remove-Item function:Show-GeistNotification -Force
+}
+
+# ============================
+# Utility: Logging Function
+# ============================
+function Write-GeistLog {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory)]
+        [string]$Message,
+
+        [ValidateSet("Info", "Warning", "Error", "Alert")]
+        [string]$Type = "Info"
+    )
+
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $line = "[$timestamp] [$Type] $Message"
+
+    # Resolve script root safely
+    $root = if ($PSScriptRoot) {
+        $PSScriptRoot
+    } elseif ($MyInvocation.MyCommand.Path) {
+        Split-Path -Parent $MyInvocation.MyCommand.Path
+    } else {
+        Get-Location | Select-Object -ExpandProperty Path
+    }
+
+    $logPath = Join-Path $root "Logs"
+    if (-not (Test-Path $logPath)) {
+        New-Item -Path $logPath -ItemType Directory -Force | Out-Null
+    }
+
+    $logFile = Join-Path $logPath "Scriptgeist.log"
+
+    try {
+        Add-Content -Path $logFile -Value $line
+    } catch {
+        Write-Warning "Failed to write to log: $logFile - $_"
+    }
 }
 
 # ============================
@@ -25,14 +64,18 @@ function Show-GeistNotification {
             Write-Warning "Toast notification failed: $_"
             Write-Host "$Title`n$Message" -ForegroundColor Yellow
         }
-    } elseif ($IsLinux -or $IsMacOS) {
+    } elseif ($IsLinux) {
         if (Get-Command notify-send -ErrorAction SilentlyContinue) {
-            Start-Process "notify-send" -ArgumentList @("$Title", "$Message")
-        } elseif ($IsMacOS) {
-            $osaScript = "display notification `"$Message`" with title `"$Title`""
-            osascript -e $osaScript
+            Start-Process "notify-send" -ArgumentList @($Title, $Message)
         } else {
             Write-Host "$Title`n$Message" -ForegroundColor Yellow
+        }
+    } elseif ($IsMacOS) {
+        $osaScript = "display notification `"$Message`" with title `"$Title`""
+        try {
+            osascript -e $osaScript | Out-Null
+        } catch {
+            Write-Warning "macOS notification failed: $_"
         }
     } else {
         Write-Host "$Title`n$Message" -ForegroundColor Yellow
@@ -47,7 +90,9 @@ function Import-ScriptgeistModules {
     param ()
 
     $moduleRoot = $PSScriptRoot
-    $modulePaths = Get-ChildItem -Path "$moduleRoot\Modules" -Recurse -Filter *.ps1 -ErrorAction SilentlyContinue
+    $modulesPath = Join-Path $moduleRoot "Modules"
+
+    $modulePaths = Get-ChildItem -Path $modulesPath -Recurse -Filter *.ps1 -ErrorAction SilentlyContinue
 
     foreach ($script in $modulePaths) {
         try {
@@ -59,7 +104,7 @@ function Import-ScriptgeistModules {
     }
 }
 
-# Load all modules now
+# Import all modules immediately
 Import-ScriptgeistModules
 
 # ============================
@@ -107,8 +152,13 @@ function Start-Scriptgeist {
         )
 
         foreach ($watcher in $watchers) {
+            Write-Host "[~] Starting $watcher..."
             if (Get-Command -Name $watcher -ErrorAction SilentlyContinue) {
-                & $watcher
+                try {
+                    & $watcher
+                } catch {
+                    Write-Warning "$watcher encountered an error: $_"
+                }
             } else {
                 Write-Warning "$watcher is not available."
             }

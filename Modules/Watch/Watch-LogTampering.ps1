@@ -1,4 +1,22 @@
-function Watch-LogTampering {
+function Write-GeistLog {
+    param (
+        [string]$Message,
+        [string]$Type = "Info"
+    )
+
+    $logPath = "$PSScriptRoot\Scriptgeist.log"
+
+    # Ensure log file exists
+    if (-not (Test-Path $logPath)) {
+        New-Item -Path $logPath -ItemType File -Force | Out-Null
+    }
+
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $entry = "[$timestamp][$Type] $Message"
+    Add-Content -Path $logPath -Value $entry
+}
+
+function Watch-LogTampering { 
     [CmdletBinding()]
     param (
         [int]$PollIntervalSeconds = 30
@@ -12,8 +30,8 @@ function Watch-LogTampering {
         $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
         $isAdmin = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
     } catch {
-        # On Linux/macOS, fallback or assume non-admin
         $isAdmin = $false
+        Write-GeistLog -Message "Could not determine admin rights: $_" -Type "Warning"
     }
 
     $logPaths = @()
@@ -29,7 +47,8 @@ function Watch-LogTampering {
             }
         }
     } else {
-        Write-Warning "Running without admin rights. System-level log monitoring will be skipped."
+        Write-Warning "Running without admin rights. System-level log monitoring will be limited."
+        Write-GeistLog -Message "Running without admin rights. Limited log coverage." -Type "Warning"
 
         if ($IsWindows) {
             $logPaths += "$env:APPDATA"
@@ -40,14 +59,25 @@ function Watch-LogTampering {
         }
     }
 
-    $fileSnapshots = @{}
+    $fileSnapshots = @{ }
     foreach ($path in $logPaths) {
         if (Test-Path $path) {
             $files = Get-ChildItem -Path $path -Recurse -File -ErrorAction SilentlyContinue
             foreach ($f in $files) {
                 $fileSnapshots[$f.FullName] = @{ Size = $f.Length; LastWriteTime = $f.LastWriteTimeUtc }
             }
+            Write-GeistLog -Message "Loaded snapshot from $path with $($files.Count) files."
+        } else {
+            Write-GeistLog -Message "Log path not found: $path" -Type "Warning"
         }
+    }
+
+    if ($fileSnapshots.Count -eq 0) {
+        Write-Host "[!] No initial log files found to monitor." -ForegroundColor Yellow
+        Write-GeistLog -Message "No log files found during initial snapshot." -Type "Warning"
+    } else {
+        Write-Host "[+] Monitoring initialized with $($fileSnapshots.Count) files." -ForegroundColor Green
+        Write-GeistLog -Message "Monitoring initialized with $($fileSnapshots.Count) files."
     }
 
     while ($true) {

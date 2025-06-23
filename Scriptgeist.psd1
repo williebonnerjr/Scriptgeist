@@ -8,10 +8,10 @@
     Copyright         = '(c) 2025 Willie Bonner Jr. All rights reserved.'
 
     FunctionsToExport = @(
-        # Core
+        # Core Launcher
         'Start-Scriptgeist',
 
-        # Watchers
+        # Watchers (Monitoring Modules)
         'Watch-ProcessAnomalies',
         'Watch-NetworkAnomalies',
         'Watch-LogTampering',
@@ -27,7 +27,7 @@
         'Watch-SystemLogs',
         'Get-SystemLogs',
 
-        # Responder
+        # Responder Actions
         'Stop-MaliciousProcess',
         'Set-Quarantine',
         'Block-ThreatIP',
@@ -38,4 +38,13 @@
     CmdletsToExport   = @()
     VariablesToExport = @()
     AliasesToExport   = @()
+
+    PrivateData = @{
+        PSData = @{
+            Tags         = @('security', 'defense', 'monitoring', 'cybersecurity', 'powershell', 'forensics', 'incident-response')
+            ProjectUri   = 'https://github.com/williebonnerjr/Scriptgeist'
+            LicenseUri   = 'https://opensource.org/licenses/MIT'
+            ReleaseNotes = 'v2.0.0 - Added responder module, credential artifact detection, GUI hooks, and CLI enhancements.'
+        }
+    }
 }

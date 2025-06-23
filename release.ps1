@@ -5,7 +5,7 @@
 .DESCRIPTION
     Suggests a semantic version bump based on recent commit messages.
     Updates Scriptgeist.psd1 with the new version, appends to CHANGELOG.md,
-    commits changes, tags the release, and pushes to GitHub.
+    commits all changes, tags the release, and pushes to GitHub.
 
 .EXAMPLE
     ./release.ps1
@@ -31,6 +31,13 @@ if (-not (Test-Path $modulePath)) {
     throw "Module manifest '$modulePath' not found."
 }
 
+# Create CHANGELOG.md if missing
+if (-not (Test-Path $changelog)) {
+    New-Item -Path $changelog -ItemType File -Force | Out-Null
+    Add-Content $changelog "# Scriptgeist Changelog`n"
+    Write-Host "📝 Created new CHANGELOG.md"
+}
+
 # Helper: Detect bump type from recent commits
 function Get-SuggestedBump {
     $commits = git log --pretty=format:"%s" -n 10
@@ -52,17 +59,20 @@ function Get-SuggestedBump {
     return "patch"
 }
 
-# Extract current version from psd1
+# Extract current version from .psd1
 $versionLine = Get-Content $modulePath | Where-Object { $_ -match "ModuleVersion\s*=\s*'(\d+)\.(\d+)\.(\d+)'" }
 if (-not $versionLine) {
     throw "Could not find ModuleVersion in $modulePath"
 }
 
-[void]($versionLine -match "'(\d+)\.(\d+)\.(\d+)'")
-$currentVersion = [int[]]@($Matches[1], $Matches[2], $Matches[3])
+if ($versionLine -match "'(\d+)\.(\d+)\.(\d+)'") {
+    $currentVersion = [int[]]@($Matches[1], $Matches[2], $Matches[3])
+} else {
+    throw "Unable to parse version from ModuleVersion line."
+}
 $newVersion = $currentVersion.Clone()
 
-# Determine bump
+# Determine bump type
 if (-not $BumpType) {
     $suggested = Get-SuggestedBump
     Write-Host "`n🔍 Suggested version bump based on recent commits: $suggested" -ForegroundColor Cyan
@@ -95,8 +105,8 @@ $recentCommits
 Add-Content $changelog "`n$entry"
 Write-Host "🧾 Appended changelog entry for v$newVersionStr" -ForegroundColor Yellow
 
-# Git add, commit, tag, push
-git add $modulePath $changelog
+# Git commit, tag, push
+git add .  # add all new and modified files
 git commit -m "Release v$newVersionStr"
 git tag "v$newVersionStr"
 git push origin main --tags

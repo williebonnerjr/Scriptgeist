@@ -1,0 +1,4 @@
+[2025-06-22 23:18:45][Info] Started Watch-LogTampering daemon
+[2025-06-22 23:18:45][Info] Loaded snapshot from C:\Windows\System32\winevt\Logs with 368 files.
+[2025-06-22 23:18:45][Info] Loaded snapshot from C:\ProgramData\Microsoft\Windows\WER\ReportQueue with 0 files.
+[2025-06-22 23:18:45][Info] Monitoring initialized with 368 files.
